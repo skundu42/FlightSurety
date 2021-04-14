@@ -3,31 +3,218 @@
 
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">  
+    <!-- <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.1.1/css/bootstrap.min.css" > -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1" crossorigin="anonymous">
+    <link rel="icon" type="image/x-icon" href="favicon.ico"/>
     <title>FlightSurety</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.1.1/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
 </head>
 
 <body>
 
-    <nav class="navbar navbar-expand-md navbar-dark bg-dark fixed-top">
-        <a class="navbar-brand" href="#">FlightSurety</a>
+    <!-- <nav class="navbar navbar-expand-md navbar-dark bg-dark fixed-top">
+        <a class="navbar-brand left-20" href="#">FlightSurety</a>
         <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarsExampleDefault" aria-controls="navbarsExampleDefault"
             aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
+        <div class="collapse navbar-collapse" id="navbarNavAltMarkup">
+            <div class="navbar-nav">
+              <a class="nav-link" href="#airlines">Airlines</a>
+              <a class="nav-link" href="#passengers">Passengers</a>
+              <a class="nav-link" href="#display-wrapper">Admin</a>
+            </div>
+            <div class="navbar-nav navbar-right">
+                <a class="nav-link">Current user</a>
+            </div>
+        </div>
+        
+    </nav> -->
+
+    <nav class="navbar navbar-inverse navbar-expand-md navbar-dark bg-dark fixed-top">
+        <a class="navbar-brand left-20" href="#">FlightSurety</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarsExampleDefault" aria-controls="navbarsExampleDefault"
+            aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="container-fluid">
+            <ul class="nav navbar-nav">
+                <li><a class="nav-link" href="#airlines">Airlines</a></li>
+                <li><a class="nav-link" href="#insurance">Insurances</a></li>
+                <li><a class="nav-link" href="#admin">Admin</a></li>
+            </ul>
+            <ul class="nav navbar-nav navbar-right">
+                <li>
+                    <a class="nav-link">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="bi bi-person-fill" viewBox="0 0 16 16">
+                            <path d="M3 14s-1 0-1-1 1-4 6-4 6 3 6 4-1 1-1 1H3zm5-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
+                        </svg>
+                        <span id="currentUser">Current user</span>
+                    </a>
+                </li>                
+            </ul>
+        </div>
     </nav>
 
-    <main class="container">
+    <main>
+        <div class="row top-20" id="airlines">
+            <div class="col-10 container">
+                <h1>Airlines</h1>
+                    <h4>Match airline name with current user address (required to select flights)</h4>
+                        <form>
+                            <div class="row top-20 bottom-20">
+                                <div class="col-3">
+                                    Assign airline name to current address
+                                </div>
+                                <div class="col-4">
+                                    <select class="form-select" id="airlinesNamesMenu"></select>                            
+                                </div>
+                                <div class="col-3">
+                                    <button type="button" class="btn btn-primary" id="btnAirlineAssignName">Assign</button>
+                                </div>                                              
+                            </div>
+                        </form>
+                    <h4>Overview of airlines status</h4>
+                        <button type="button" class="btn btn-primary" id="btnAirlineStatusRefresh">Refresh status</button>
+                        <table class="table white-font">
+                            <thead>
+                              <tr>
+                                <th scope="col">Address</th>
+                                <th scope="col">Name</th>
+                                <th scope="col">IATA</th>
+                                <th scope="col">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody id="tableAirlinesStatus"></tbody>
+                        </table>
+                    <h4>Register an airline</h4>
+                        <form>
+                            <div class="row top-20 bottom-20">
+                                <div class="col-3">
+                                    Enter address of airline to register
+                                </div>
+                                <div class="col-4">
+                                    <input type="text" class="form-control" placeholder="Enter airline address" id="airlineAddressToRegister"></select>                            
+                                </div>
+                                <div class="col-3">
+                                    <button type="button" class="btn btn-primary" id="btnAirlineRegister">Register</button>
+                                </div>                                              
+                            </div>
+                        </form>
+                    <h4>Fund an airline</h4>
+                        <form>
+                            <div class="row top-20 bottom-20">
+                                <div class="col-3">
+                                    Enter amount of funding for current user (in ETH)
+                                </div>
+                                <div class="col-4">
+                                    <input type="number" class="form-control" placeholder="1" id="airlineAmountToFund"></input>                            
+                                </div>
+                                <div class="col-3">
+                                    <button type="button" class="btn btn-primary" id="btnAirlineFund">Fund</button>
+                                </div>                                              
+                            </div>
+                        </form>
+            </div>
+        </div>
 
-        <div id="display-wrapper" class="top-20">
+        <div class="row top-20" id="insurance">
+            <div class="col-10 container">
+                <h1>Insurances</h1>
+                    <h4>Purchase insurance</h4>
+                        <form>
+                            <div class="row top-20 bottom-20">
+                                <div class="col-3">
+                                    Select (funded) airline to purchase flight insurance on
+                                </div>
+                                <div class="col-6">
+                                    <select class="form-select" id="insuranceAirlinesMenu" placeholder="Select airline"></select>                            
+                                </div>                                                                      
+                            </div>
+                            <div class="row top-20 bottom-20">
+                                <div class="col-3">
+                                    Select flight to insure
+                                </div>
+                                <div class="col-6">
+                                    <select class="form-select" id="insuranceFlightsMenu"></select>                            
+                                </div>                                                                      
+                            </div>
+                            <div class="row top-20 bottom-20">
+                                <div class="col-3">
+                                    Enter amount insured for current user (in ETH, max 1 ETH)
+                                </div>
+                                <div class="col-4">
+                                    <input type="text" class="form-control" id="insuranceAmount"></input>                            
+                                </div>
+                                <div class="col-3">
+                                    <button type="button" class="btn btn-primary" id="btnInsuranceBuy">Buy</button>
+                                </div>                                              
+                            </div>
+                        </form>
+                    <h4>Redeem insurance</h4>
+                        <form>
+                            <div class="row top-20 bottom-20">
+                                <div class="col-3">
+                                    Select active insurance of current user
+                                </div>
+                                <div class="col-6">
+                                    <select class="form-select" id="insurancePurchasedMenu"></select>                            
+                                </div>
+                                                                                                
+                            </div>
+                            <div class="row top-20 bottom-20">
+                                <div class="col-3">
+                                    <button type="button" class="btn btn-primary" id="insuranceCheckFlightStatus">
+                                        Check flight status
+                                        <span class="spinner-border spinner-border-sm" id="spinnerStatus" role="status" aria-hidden="true"></span>                                         
+                                    </button> 
+                                </div>                                
+                                <div class="col-6">
+                                    <input type="text" class="form-control" id="flightStatus" readonly></input>                                     
+                                </div>
+                            </div>
+                            <div class="row top-20 bottom-20">
+                                <div class="col-3">
+                                    <button type="button" class="btn btn-primary" id="btnUserCredit">Check user credit</button>                                
+                                </div>
+                                <div class="col-4">
+                                    <input type="text" class="form-control" id="creditAmount" readonly></input> 
+                                    <!-- <ul class="list-group">
+                                        <li class="list-group-item" id="creditAmount">0</li>
+                                    </ul> -->
+                                </div>
+                                <div class="col-3">
+                                    <button type="button" class="btn btn-primary" id="btnWithdraw">Withdraw</button>
+                                </div>                                              
+                            </div>
+                        </form>    
+            </div>
         </div>
-        <div class="row top-20">
-            <label class="form">Flight</label> <input type="text" id="flight-number"> <btn class="btn btn-primary" id="submit-oracle">Submit to Oracles</btn>
+
+        <div class="row top-20" id="admin">
+            <div class="col-10 container" id="sub-tmp">
+                <h1>Admin</h1>
+                    <form>
+                        <div class="row top-20 bottom-20">
+                            <div class="col-3">
+                                <button type="button" class="btn btn-primary" id="btnCheckStatus">Check contracts status</button>
+                            </div>
+                        </div>
+                        <div class="row top-20 bottom-20">
+                            <div class="col-3">
+                                FlightSuretyApp is operational
+                            </div>
+                            <div class="col-3">
+                                <input type="text" class="form-control" id="flightSuretyAppStatus" readonly></input>               
+                            </div>                                                                                            
+                        </div>                                            
+                    </form>    
+            </div>
         </div>
+        
     </main>
 
+    <!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.bundle.min.js" integrity="sha384-ygbV9kiqUc6oa4msXn9868pTtWMgiQaeYH7/t7LECLbyPA2x65Kgf80OJFdroafW" crossorigin="anonymous"></script> -->
 </body>
 
 </html>

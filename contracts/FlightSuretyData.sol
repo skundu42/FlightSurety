@@ -1,370 +1,311 @@
-pragma solidity ^0.4.25;
+// SPDX-License-Identifier: MIT
 
-import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
+pragma solidity >= 0.6.2;
+pragma experimental ABIEncoderV2;
 
+import "../node_modules/@openzeppelin/contracts/math/SafeMath.sol";
 
 contract FlightSuretyData {
-    using SafeMath for uint;
+    using SafeMath for uint256;
 
-    //////////////////////// DATA VARIABLES
+    /********************************************************************************************/
+    /*                                       DATA VARIABLES                                     */
+    /********************************************************************************************/
 
-    // Account used to deploy contract
-    address private contractOwner;
-    // Blocks all state changes throughout the contract if false
-    bool public operational = true;
-    // List addresses allowed to call this contract
-    mapping(address => bool) public authorizedCallers;
+    // management of contract
+    address private contractOwner;                                      // Account used to deploy contract
+    bool private operational = true;                                    // Blocks all state changes throughout the contract if false
+    mapping(address => bool) private authorizedCallers;                 // all authorized contracts (callers)
 
-    // Airlines
-    struct Airline {
-        bool registered;
-        bool funded;
-    }
+    // management of airlines - here we only care that an airline is funded
+    // (the registration is a prerequisite taken care of in the App contract)
+    mapping(address => bool) private fundedAirlines;                    // funded (and thus also approved) airlines
 
-    mapping(address => Airline) public airlines;
-    uint public registeredAirlinesCount;
-    address public firstAirline;
-
-    // Flights
-    struct Flight {
-        bool isRegistered;
-        uint8 statusCode;
-        uint256 takeOff;
-        uint256 landing;
+    // data of passenger insurance
+    struct InsuranceData {        
         address airline;
-        string flightRef;
-        uint price;
-        string from;
-        string to;
-        mapping(address => bool) bookings;
-        mapping(address => uint) insurances;
-
+        string flight;
+        uint256 timestamp;        
     }
+    // record meta data of insurance in smart contract
+    // key = flight key, value = meta data
+    mapping(bytes32 => InsuranceData) private insuranceDataPerFlightKey; 
 
-    /* Have to be out of the Flight struct type,
-    otherwise can't use FLight constructor in the registerFLight function.
-    (unlike mapping object, array argument can't be omitted)
-    */
-    address[] internal passengers;
+    // all keys ever used in a flight insurance
+    bytes32[] private allKeys;
 
-    mapping(bytes32 => Flight) public flights;
-    bytes32[] public flightKeys;
-    uint public indexFlightKeys = 0;
+    // all insuree ever involved in a flight insurance
+    address[] private allInsurees;
 
-    /* Withdrawals:
-    - passengers: insurance claims
-    - airlines: flights prices paid by passengers
-    */
+    // store premia paid for insuraces by insuree (passenger)
+    // first key = result of getFlightKey, second key is address of insuree, value is premium
+    mapping(bytes32 => mapping(address => uint256)) private insurancesPerKey;
 
-    mapping(address => uint) public withdrawals;
+    // store premia paid for insuraces by insuree (passenger)
+    // first key = address of insuress, second key is result of getFlightKey
+    //mapping(address => mapping(bytes32 => uint256)) private insurancesPerInsuree;
 
-    ////////////////////////// EVENTS
-    event Paid(address recipient, uint amount);
-    event Funded(address airline);
-    event AirlineRegistered(address origin, address newAirline);
-    event Credited(address passenger, uint amount);
-    ///////////////////////// CONSTRUCTOR
+    // store credit of passengers, key = address of insuree, value = credit due to insuree
+    mapping(address => uint256) private credit;
 
-    constructor(address _firstAirline) public {
+    /********************************************************************************************/
+    /*                                       EVENT DEFINITIONS                                  */
+    /********************************************************************************************/
+
+    /********************************************************************************************/
+    /*                                 CONSTRUCTOR & FALLBACK                                   */
+    /********************************************************************************************/
+
+    /// @dev Constructor
+    ///      The deploying account becomes contractOwner
+    constructor() public {
         contractOwner = msg.sender;
-
-        // register first airline at deployment
-        firstAirline = _firstAirline;
-        registeredAirlinesCount = 1;
-        airlines[firstAirline].registered = true;
     }
 
-    ////////////////////////// MODIFIERS
-    /**
-    * @dev Modifier that requires the "operational" boolean variable to be "true"
-    *      This is used on all state changing functions to pause the contract in
-    *      the event there is an issue that needs to be fixed
-    */
-    modifier requireIsOperational() {
-        require(operational, "Contract is currently not operational");
-        // All modifiers require an "_" which indicates where the function body will be added
+    /// @dev make sure fallback function is not not payable so can't be used for funding smart contract
+    fallback() external {
+    }
+
+    /********************************************************************************************/
+    /*                                       FUNCTION MODIFIERS                                 */
+    /********************************************************************************************/
+
+    // Modifiers help avoid duplication of code. They are typically used to validate something
+    // before a function is allowed to be executed.
+
+    /// @dev Modifier that requires the "operational" boolean variable to be "true"
+    ///      This is used on all state changing functions to pause the contract in 
+    ///      the event there is an issue that needs to be fixed
+    modifier requireIsOperational(){
+        require(operational, "Contract FlightSuretyData is currently not operational");
         _;
     }
 
-    /**
-    * @dev Modifier that requires the "ContractOwner" account to be the function caller
-    */
-    modifier requireContractOwner() {
-        require(msg.sender == contractOwner, "Caller is not contract owner");
+    /// @dev Modifier that requires the "ContractOwner" account to be the function caller
+    modifier requireContractOwner(){
+        require(msg.sender == contractOwner, "Caller of FlightSuretyData is not contract owner");
         _;
     }
 
-    // restrict function calls to previously authorized addresses
-    modifier callerAuthorized() {
-        require(authorizedCallers[msg.sender] == true, "Address not authorized to call this function");
+    /// @dev Modifier that requires the function caller to be authorized
+    modifier requireAuthorizedCaller(){
+        require(authorizedCallers[msg.sender], "Caller of FlightSuretyData is not authorized");
         _;
     }
 
-    // To avoid spending gas trying to put the contract in a state it already is in
-    modifier differentModeRequest(bool status) {
-        require(status != operational, "Contract already in the state requested");
-        _;
+    /********************************************************************************************/
+    /*                                       UTILITY FUNCTIONS                                  */
+    /********************************************************************************************/
+
+    /// @dev Get operating status of contract
+    /// @return A bool that is the current operating status
+    function isOperational() public view returns(bool) {
+        return operational;
     }
 
-    modifier flightRegistered(bytes32 flightKey) {
-        require(flights[flightKey].isRegistered, "This flight does not exist");
-        _;
-    }
-
-    modifier valWithinRange(uint val, uint low, uint up) {
-        require(val < up, "Value higher than max allowed");
-        require(val > low, "Value lower than min allowed");
-        _;
-    }
-
-    /* do not process a flight more than once,
-    which could e.g result in the passengers being credited their insurance amount twice.
-    */
-    modifier notYetProcessed(bytes32 flightKey) {
-        require(flights[flightKey].statusCode == 0, "This flight has already been processed");
-        _;
-    }
-    /////////////////////////// UTILITY FUNCTIONS
-    /**
-    * @dev Sets contract operations on/off
-    *
-    * When operational mode is disabled, all write transactions except for this one will fail
-    */
-
-    function setOperatingStatus(bool mode) external requireContractOwner
-    differentModeRequest(mode)
-    {
+    /// @dev Sets contract operations on/off
+    /// When operational mode is disabled, all write transactions except for this one will fail
+    function setOperatingStatus(bool mode) external requireContractOwner {
         operational = mode;
     }
 
-    // function to authorize addresses (especially the App contract!) to call functions from flighSuretyData contract
-    function authorizeCaller(address callerAddress)
-    external
-    requireContractOwner
-    requireIsOperational
-    {
-        authorizedCallers[callerAddress] = true;
+    /// @dev Add an authorized address
+    function authorizeCaller(address _address) external requireContractOwner {
+        authorizedCallers[_address] = true;
     }
 
-    function hasFunded(address airlineAddress)
-    external
-    view
-    returns (bool _hasFunded)
-    {
-        _hasFunded = airlines[airlineAddress].funded;
+    /// @dev Remove an authorized address
+    function deAuthorizeCaller(address _address) private requireContractOwner {
+        authorizedCallers[_address] = false;
     }
 
-    function isRegistered(address airlineAddress)
-    external
-    view
-    returns (bool _registered)
-    {
-        _registered = airlines[airlineAddress].registered;
+    /********************************************************************************************/
+    /*                                 FUNCTIONS FOR TESTING ONLY                               */
+    /********************************************************************************************/
+
+    /// @dev used for testing requireIsOperational, always returns true
+    function testIsOperational() public view requireIsOperational returns(bool) {
+        return true;
     }
 
-    function getFlightKey
-    (
-        string flightRef,
-        string destination,
-        uint256 timestamp
-    )
-    public
-    pure
-    returns(bytes32)
-    {
-        return keccak256(abi.encodePacked(flightRef, destination, timestamp));
-    }
-
-    function paxOnFlight
-    (
-        string flightRef,
-        string destination,
-        uint256 timestamp,
-        address passenger
-    )
-    public
-    view
-    returns(bool onFlight)
-    {
-        bytes32 flightKey = getFlightKey(flightRef, destination, timestamp);
-        onFlight = flights[flightKey].bookings[passenger];
-    }
-
-    function subscribedInsurance
-    (
-        string flightRef,
-        string destination,
-        uint256 timestamp,
-        address passenger
-    )
-    public
-    view
-    returns(uint amount)
-    {
-        bytes32 flightKey = getFlightKey(flightRef, destination, timestamp);
-        amount = flights[flightKey].insurances[passenger];
-    }
-
-    function getFlightPrice(bytes32 flightKey)
-    external
-    view
-    returns (uint price)
-    {
-        price = flights[flightKey].price;
-    }
-
-    //////////////////////// SMART CONTRACT FUNCTIONS
-   /**
-    * @dev Add an airline to the registration queue
-    *      Can only be called from FlightSuretyApp contract
-    *
-    */
-    function registerAirline
-    (
-        address airlineAddress,
-        address originAddress
-    )
-    external
-    requireIsOperational
-    callerAuthorized
-    {
-        registeredAirlinesCount++;
-        airlines[airlineAddress].registered = true;
-        emit AirlineRegistered(originAddress, airlineAddress);
-    }
-
-    function registerFlight
-    (
-        uint _takeOff,
-        uint _landing,
-        string _flight,
-        uint _price,
-        string _from,
-        string _to,
-        address originAddress
-    )
-    external
-    requireIsOperational
-    callerAuthorized
-    {
-        require(_takeOff > now, "A flight cannot take off in the past");
-        require(_landing > _takeOff, "A flight cannot land before taking off");
-
-        Flight memory flight = Flight(
-            true,
-            0,
-            _takeOff,
-            _landing,
-            originAddress,
-            _flight,
-            _price,
-            _from,
-            _to
-        );
-        bytes32 flightKey = keccak256(abi.encodePacked(_flight, _to, _landing));
-        flights[flightKey] = flight;
-        indexFlightKeys = flightKeys.push(flightKey).sub(1);
-        // event emission in app contract
-    }
-
+    /********************************************************************************************/
+    /*                                     SMART CONTRACT FUNCTIONS                             */
+    /********************************************************************************************/
 
    /**
-    * @dev Passenger Buys insurance for a flight
+    * @dev Buy insurance for a flight
     *
-    */
-    function book(bytes32 flightKey, uint amount, address originAddress)
-    external
-    requireIsOperational
-    callerAuthorized
-    flightRegistered(flightKey)
-    payable
+    */   
+    function buy (address airline, string memory flight, uint256 timestamp, address insuree)
+        external
+        payable
+        requireAuthorizedCaller
     {
-        Flight storage flight = flights[flightKey];
-        flight.bookings[originAddress] = true;
-        flight.insurances[originAddress] = amount;
-        passengers.push(originAddress);
-        withdrawals[flight.airline] = flight.price;
+        // get flight key
+        bytes32 key = getFlightKey(airline, flight, timestamp);
+        // add insurance to insurances
+        require(insurancesPerKey[key][insuree] == 0) ; // only one insurance allowed per passenger per flight
+        //require(insurancesPerInsuree[insuree][key] == 0);
+        // record insurance metadata
+        insuranceDataPerFlightKey[key] = InsuranceData({airline : airline, flight : flight, timestamp : timestamp}); // record meta data of insurance in smart contract
+        // book insurance premium
+        insurancesPerKey[key][insuree] = msg.value;
+        //insurancesPerInsuree[key][insuree] = msg.value;
+        // add key to list of keys
+        uint256 i=0;
+        for(i=0; i<allKeys.length; i++)
+            if(allKeys[i]==key)
+                break;
+        if(i==allKeys.length) // first time this key appears
+            allKeys.push(key);
+        // add insuree to list of insurees
+        for(i=0; i<allInsurees.length; i++)
+            if(allInsurees[i]==insuree)
+                break;
+        if(i==allInsurees.length) // first time this key appears
+            allInsurees.push(insuree);        
     }
-
-    function creditInsurees(bytes32 flightKey)
-    internal
-    requireIsOperational
-    flightRegistered(flightKey)
-    {
-        // get flight
-        Flight storage flight = flights[flightKey];
-        // loop over passengers and credit them their insurance amount
-        for (uint i = 0; i < passengers.length; i++) {
-            withdrawals[passengers[i]] = flight.insurances[passengers[i]];
-            emit Credited(passengers[i], flight.insurances[passengers[i]]);
-        }
-    }
-
 
     /**
-     *  @dev Transfers eligible payout funds to insuree or airline
+     *  @dev Credits payouts to insurees whose insurance matches getFlightKey(airline, flight, timestamp)
+    */
+    function creditInsurees (
+        address airline,
+        string memory flight,
+        uint256 timestamp,
+        uint256 payOffNumerator,
+        uint256 payOffDenominator
+    )
+        external
+        requireAuthorizedCaller
+    {
+        // get flight key
+        bytes32 key = getFlightKey(airline, flight, timestamp);
+        // loop on insurees
+        for (uint256 i=0; i<allInsurees.length; i++){
+            // address of insuree
+            address insuree = allInsurees[i];
+            // multiply paid premium by payOff
+            uint256 payout = (insurancesPerKey[key][insuree]).mul(payOffNumerator).div(payOffDenominator);
+            // set insured amount for flight to 0
+            insurancesPerKey[key][insuree] = 0;
+            //insurancesPerInsuree[insuree][key] = 0;
+            // update insuree credit
+            credit[insuree] = credit[insuree].add(payout);
+        }                    
+    }
+
+    /**
+     *  @dev Transfers passengers paid premia to insurance definitely (because flight was not delayed due to an airline fault)
      *
     */
-    function pay(address originAddress)
-    external
-    requireIsOperational
-    callerAuthorized
+    function terminateInsurance(address airline, string memory flight, uint256 timestamp) external requireAuthorizedCaller{
+        // get flight key
+        bytes32 key = getFlightKey(airline, flight, timestamp);
+        // loop on insurees
+        for (uint256 i=0; i<allInsurees.length; i++){
+            // address of insuree
+            address insuree = allInsurees[i];
+            // set insured amount for flight to 0
+            insurancesPerKey[key][insuree] = 0;
+            //insurancesPerInsuree[insuree][key] = 0;
+        }        
+    }
+
+    /**
+     *  @dev Transfers eligible payout funds to insuree (to be called after creditInsurees)
+     *
+    */
+    function pay(address passenger) external requireAuthorizedCaller{
+        uint256 amount = credit[passenger];
+        credit[passenger] = 0;
+        payable(passenger).transfer(amount);
+    }
+
+    /**
+     *  @dev Returns credit of a passenger
+     *
+    */
+    function getCredit(address passenger) view external requireAuthorizedCaller returns(uint256){
+        return credit[passenger];        
+    }
+
+    /**
+     *  @dev Returns amount (premium) of passenger insurance
+     *
+    */
+    function getInsurance(address passenger, address airline, string memory flight, uint256 timestamp) view external requireAuthorizedCaller returns(uint256){
+        // get flight key
+        bytes32 key = getFlightKey(airline, flight, timestamp);
+        return insurancesPerKey[key][passenger];
+    }
+
+    /**
+     *  @dev Returns list of active insurances' keys for a given passenger
+     *
+    */
+    function getActiveInsuranceKeys(address insuree)
+        view
+        external
+        requireAuthorizedCaller
+        returns(bytes32[] memory activeInsuranceKeys, uint256 nActiveInsurances)
     {
-        // Check-Effect-Interaction pattern to protect against re entrancy attack
-        // Check
-        require(withdrawals[originAddress] > 0, "No amount to be transferred to this address");
-        // Effect
-        uint amount = withdrawals[originAddress];
-        withdrawals[originAddress] = 0;
-        // Interaction
-        originAddress.transfer(amount);
-        emit Paid(originAddress, amount);
+        nActiveInsurances = 0;
+
+        // find number of active insurances of current passenger
+        for (uint256 i=0; i<allKeys.length; i++){
+            bytes32 key = allKeys[i];
+            if(insurancesPerKey[key][insuree] != 0){ // active insurance
+                nActiveInsurances++;
+            }
+        }
+
+        activeInsuranceKeys = new bytes32[](nActiveInsurances);
+        uint256 idx = 0;
+        for (uint256 i=0; i<allKeys.length; i++){
+            bytes32 key = allKeys[i];
+            if(insurancesPerKey[key][insuree] != 0){ // active insurance
+                activeInsuranceKeys[idx] = key;
+                idx++;
+            }
+        }
+        // we need to return the num of active insurances, otherwise too much is returned
+        // if an insurance is removed before another is added
+        return (activeInsuranceKeys, nActiveInsurances);
+    }
+
+    /**
+     *  @dev Returns insurance data for a given key
+     *
+    */
+    function getInsuranceData(bytes32 key) view external requireAuthorizedCaller returns(address airline, string memory flight, uint256 timestamp){
+        InsuranceData memory data = insuranceDataPerFlightKey[key];
+        return (data.airline, data.flight, data.timestamp);
+    }
+
+
+    function getFlightKey(address airline, string memory flight, uint256 timestamp)
+        pure
+        internal
+        returns(bytes32) 
+    {
+        return keccak256(abi.encodePacked(airline, flight, timestamp));
     }
 
    /**
     * @dev Initial funding for the insurance. Unless there are too many delayed flights
-    *      resulting in insurance payouts, the contract should be self-sustaining
-    *
-    */
-    function fund(address originAddress)
-    public
-    requireIsOperational
-    callerAuthorized
-    payable
-    {
-        airlines[originAddress].funded = true;
-        emit Funded(originAddress);
+    *      resulting in insurance payouts, the contract should be self-sustaining.
+    *      New airlines joining the insurance first need to register (and be approved), and once
+    *      they are they need to fund the insurance to be activated.
+    */   
+    function fund(address airline) external payable requireAuthorizedCaller {
+        // make sure an airline is only funded once
+        require(fundedAirlines[airline] == false);
+        // check funding amount
+        require(msg.value == 10 ether);
+        // flag airline as funded
+        fundedAirlines[airline] = true;
     }
 
-    function processFlightStatus
-    (
-        bytes32 flightKey,
-        uint8 statusCode
-    )
-    external
-    flightRegistered(flightKey)
-    requireIsOperational
-    callerAuthorized
-    notYetProcessed(flightKey)
-    {
-        // Check (modifiers)
-        Flight storage flight = flights[flightKey];
-        // Effect
-        flight.statusCode = statusCode;
-        // Interact
-        // 20 = "flight delay due to airline"
-        if (statusCode == 20) {
-            creditInsurees(flightKey);
-        }
-    }
 
-    /**
-    * @dev Fallback function for funding smart contract.
-    *
-    */
-    function() external callerAuthorized payable
-    {
-        require(msg.data.length == 0);
-        fund(msg.sender);
-    }
 }

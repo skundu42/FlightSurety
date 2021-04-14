@@ -1,10 +1,9 @@
-const FlightSuretyApp = artifacts.require("FlightSuretyApp");
-const FlightSuretyData = artifacts.require("FlightSuretyData");
+var FlightSuretyApp = artifacts.require("FlightSuretyApp");
+var FlightSuretyData = artifacts.require("FlightSuretyData");
+var BigNumber = require('bignumber.js');
 
-const BigNumber = require('bignumber.js');
-
-const Config = async function (accounts) {
-
+var Config = async function(accounts) {
+    
     // These test addresses are useful when you need to add
     // multiple users in test scripts
     let testAddresses = [
@@ -20,20 +19,21 @@ const Config = async function (accounts) {
     ];
 
 
-    const owner = accounts[0];
+    let owner = accounts[0];
+    let firstAirline = accounts[1]; // in line with migration file "2_deploy_contracts.js"
 
-    const flightSuretyData = await FlightSuretyData.new();
-    const flightSuretyApp = await FlightSuretyApp.new(flightSuretyData.address);
-
+    let flightSuretyData = await FlightSuretyData.new();
+    let flightSuretyApp = await FlightSuretyApp.new(flightSuretyData.address, firstAirline);
+    
     return {
         owner: owner,
-        firstAirline: owner,
+        firstAirline: firstAirline,
         weiMultiple: (new BigNumber(10)).pow(18),
         testAddresses: testAddresses,
         flightSuretyData: flightSuretyData,
         flightSuretyApp: flightSuretyApp
     }
-};
+}
 
 module.exports = {
     Config: Config
