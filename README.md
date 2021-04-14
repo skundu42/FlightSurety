@@ -1,6 +1,6 @@
 # FlightSurety
 
-FlightSurety is a sample application project for Udacity's Blockchain course.
+FlightSurety is a sample application project for Udacity's Blockchain Devloper course.
 
 ## Install
 
@@ -10,6 +10,7 @@ To install, download or clone the repo, then:
 
 `npm install`
 `truffle compile`
+'truffle migrate --reset'
 
 ## Develop Client
 
